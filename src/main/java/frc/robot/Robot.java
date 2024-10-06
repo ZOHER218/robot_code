@@ -51,7 +51,7 @@ public class Robot extends TimedRobot {
 
     // Start the vision processing thread
     m_visionThread = new Thread(() -> {
-      CvSink cvSink = CameraServer.getVideo();
+      CvSink cvSink = CameraServer.getVideo(); // for dashboardd
       CvSource outputStream = CameraServer.putVideo("Processed", 160, 120);
       Mat mat = new Mat();
 
@@ -69,9 +69,14 @@ public class Robot extends TimedRobot {
         Scalar lowerBlue = new Scalar(100, 150, 70); // Adjust these values based on lighting and camera
         Scalar upperBlue = new Scalar(130, 255, 255);
 
+        Scalar lowerRed = new Scalar(0, 150, 70);  // First range for red
+Scalar upperRed = new Scalar(10, 255, 255);
+
+// Scalar lowerRed2 = new Scalar(170, 150, 70);  // Second range for red (to account for red wrapping around the hue spectrum)
+// Scalar upperRed2 = new Scalar(180, 255, 255);
         // Create a mask for the blue color
         Mat mask = new Mat();
-        Core.inRange(hsvMat, lowerBlue, upperBlue, mask);
+        Core.inRange(hsvMat, lowerRed, upperRed, mask);
 
         // Find contours of the blue object
         Moments moments = Imgproc.moments(mask);
