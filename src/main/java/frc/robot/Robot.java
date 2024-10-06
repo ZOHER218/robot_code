@@ -15,8 +15,13 @@ import edu.wpi.first.cscore.CvSource;
 import edu.wpi.first.cscore.UsbCamera;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfPoint;
+import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
 import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
@@ -50,48 +55,66 @@ public class Robot extends TimedRobot {
     //camera2.setResolution(160, 120);
 
     // Start the vision processing thread
-    m_visionThread = new Thread(() -> {
-      CvSink cvSink = CameraServer.getVideo(); // for dashboardd
-      CvSource outputStream = CameraServer.putVideo("Processed", 160, 120);
-      Mat mat = new Mat();
+   m_visionThread = new Thread(() -> {
+  CvSink cvSink = CameraServer.getVideo();
+  CvSource outputStream = CameraServer.putVideo("Processed", 160, 120);
+  Mat mat = new Mat();
 
-      while (!Thread.interrupted()) {
-        if (cvSink.grabFrame(mat) == 0) {
-          outputStream.notifyError(cvSink.getError());
-          continue;
+  while (!Thread.interrupted()) {
+    if (cvSink.grabFrame(mat) == 0) {
+      outputStream.notifyError(cvSink.getError());
+      continue;
+    }
+
+    // Convert to HSV for color detection
+    Mat hsvMat = new Mat();
+    Imgproc.cvtColor(mat, hsvMat, Imgproc.COLOR_BGR2HSV);
+
+    // Define the HSV range for the color red
+    Scalar lowerRed1 = new Scalar(0, 150, 70);  // First range for red
+    Scalar upperRed1 = new Scalar(10, 255, 255);
+
+    Scalar lowerRed2 = new Scalar(170, 150, 70);  // Second range for red (to account for red wrapping around the hue spectrum)
+    Scalar upperRed2 = new Scalar(180, 255, 255);
+
+    // Create a mask for the red color
+    Mat mask1 = new Mat();
+    Mat mask2 = new Mat();
+    Core.inRange(hsvMat, lowerRed1, upperRed1, mask1);
+    Core.inRange(hsvMat, lowerRed2, upperRed2, mask2);
+    Mat maskRed = new Mat();
+    Core.bitwise_or(mask1, mask2, maskRed);  // Combine the two masks
+
+    // Find contours of the red object
+    List<MatOfPoint> contours = new ArrayList<>();
+    Mat hierarchy = new Mat();
+    Imgproc.findContours(maskRed, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE);
+
+    for (MatOfPoint contour : contours) {
+        // Approximate contour shape
+        MatOfPoint2f contour2f = new MatOfPoint2f(contour.toArray());
+        double approxDistance = Imgproc.arcLength(contour2f, true) * 0.02;
+        MatOfPoint2f approxCurve = new MatOfPoint2f();
+        Imgproc.approxPolyDP(contour2f, approxCurve, approxDistance, true);
+
+        // Check if the contour has four points (for a cube)
+        if (approxCurve.total() == 4) {
+            Moments moments = Imgproc.moments(contour);
+            if (moments.get_m00() > 0) {
+                centerX = moments.get_m10() / moments.get_m00(); // Calculate the center of the object
+
+                // Draw a circle at the center of the red cube
+                Imgproc.circle(mat, new Point(centerX, 120), 5, new Scalar(0, 255, 0), -1);
+            }
         }
+    }
 
-        // Convert to HSV for color detection
-        Mat hsvMat = new Mat();
-        Imgproc.cvtColor(mat, hsvMat, Imgproc.COLOR_BGR2HSV);
-
-        // Define the HSV range for the color blue
-        Scalar lowerBlue = new Scalar(100, 150, 70); // Adjust these values based on lighting and camera
-        Scalar upperBlue = new Scalar(130, 255, 255);
-
-        Scalar lowerRed = new Scalar(0, 150, 70);  // First range for red
-Scalar upperRed = new Scalar(10, 255, 255);
-
-// Scalar lowerRed2 = new Scalar(170, 150, 70);  // Second range for red (to account for red wrapping around the hue spectrum)
-// Scalar upperRed2 = new Scalar(180, 255, 255);
-        // Create a mask for the blue color
-        Mat mask = new Mat();
-        Core.inRange(hsvMat, lowerRed, upperRed, mask);
-
-        // Find contours of the blue object
-        Moments moments = Imgproc.moments(mask);
-        if (moments.get_m00() > 0) {
-          centerX = moments.get_m10() / moments.get_m00(); // Calculate the center of the object
-        }
-
-        // Draw a circle at the center of the blue object
-        Imgproc.circle(mat, new Point(centerX, 120), 5, new Scalar(0, 255, 0), -1);
-
-        outputStream.putFrame(mat);  // Display the processed frame
-      }
-    });
-    m_visionThread.setDaemon(true);
-    m_visionThread.start();
+    outputStream.putFrame(mat);  // Display the processed frame
+  }
+});
+m_visionThread.setDaemon(true);
+m_visionThread.start();
+  
   }
 
   @Override
